@@ -74,7 +74,6 @@ Communication between the simulation environment, proxy, and target units is bas
 
 | Directory | Description |
 |-----------|-------------|
-
 | `proxy/` | Source code for the proxy component |
 | `sim/` | Standalone app emulating the simulation environment (integration testing) |
 | `trgt/` | Standalone app emulating a target unit (integration testing) |
@@ -108,7 +107,6 @@ cd proxy
 
 | Dependency | Purpose |
 |------------|---------|
-
 | `cmake` | Build system |
 | `libpaho-mqtt*` | MQTT C/C++ client libraries |
 | `libboost-all-dev` | INI parser (`boost::property_tree`) |
