@@ -5,3 +5,11 @@ trgt/build/
 proxy/build/
 proxy/unitTest/configTest/build/
 proxy/unitTest/proxyTest/build/
+
+# Code coverage outputs
+**/coverageReports/
+*.gcno
+*.gcda
+*.gcov
+lcov.info
+coverage.info
