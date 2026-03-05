@@ -33,6 +33,11 @@ jobs:
         ./configTest
       working-directory: proxy/unitTest/configTest
 
+    - name: Start MQTT broker
+      run: |
+        sudo apt-get install -y mosquitto
+        sudo systemctl start mosquitto || mosquitto -d -p 1883
+
     - name: Build and run proxy unit tests
       run: |
         mkdir -p build
