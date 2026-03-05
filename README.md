@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains the source code for the "proxy" software component, a crucial part of the graduation project "Vehicle Platooning with V2V using Embedded Linux". The main objective of this project is to implement a truck platooning system, which involves realistic simulations and embedded Linux target units to represent the brains of vehicles responsible for communication and control algorithms.
+This repository contains the source code for the **proxy** software component, a crucial part of the graduation project *"Vehicle Platooning with V2V using Embedded Linux"*. The main objective of this project is to implement a truck platooning system, which involves realistic simulations and embedded Linux target units to represent the brains of vehicles responsible for communication and control algorithms.
 
 ## Project Components
 
@@ -10,6 +10,7 @@ The system consists of:
 
 - **Simulation Environment (CARLA)**: Provides a realistic environment for testing the system.
 - **Embedded Linux Target Units**: Each unit represents a vehicle's brain, handling communication and control algorithms.
+- **Proxy**: Bridges the simulation and target units over MQTT, synchronizing data flow.
 
 ## Problem and Solution
 
@@ -19,206 +20,225 @@ The project faced a challenge with unsynchronized data exchange between the simu
 
 The proxy component's primary role is to:
 
-1. **Receive Sensor Messages**: Collect sensor data from the CARLA simulation environment.
+1. **Receive Sensor Messages**: Collect sensor data from the CARLA simulation environment via MQTT.
 2. **Parse and Route Messages**: Parse the sensor data and route the parsed messages to the corresponding target embedded Linux units.
-3. **Synchronize Actions**: Receive control signals from the target units, compose them into a single message, and send it back to CARLA to synchronize the arrival of actions.
+3. **Synchronize Actions**: Receive control signals from all target units, compose them into a single message, and send it back to CARLA to synchronize the arrival of actions.
+
+### Architecture
+
+```plaintext
+CARLA (sim)  ──MQTT──►  Proxy  ──MQTT──►  Target 1..N
+                          ▲                    │
+                          └────────MQTT────────┘
+```
+
+- The proxy subscribes to `sim/sensors` and `trgt/XX/actions`.
+- The proxy publishes to `sim/actions` and `trgt/XX/sensors`.
+- A bitmask tracks which sources have delivered data; a condition variable wakes the main loop when all expected data arrives.
 
 ## Communication Protocol
 
-The communication between the simulation environment, proxy, and target units is based on the MQTT protocol using Mosquitto broker and Paho clients.
+Communication between the simulation environment, proxy, and target units is based on the **MQTT protocol** using a Mosquitto broker and Paho C++ clients.
 
 ## Repository Structure
 
-``` bash
-├── proxy
-│   └── unitTest
-│       ├── configTest
-│       │   └── coverageReports
-│       └── proxyTest
-│           └── coverageReports
-├── sim
-├── trgt
-├── .git
-└── .github
-    └── workflows
-```
-
-``` bash
-proxy
-├── CMakeLists.txt
-├── config.cpp
-├── config.hpp
-├── config.ini
-├── main.cpp
-├── proxy.cpp
-├── proxy.hpp
-└── unitTest
-    ├── configTest
-    │   ├── ...
-    │   ├── ...
-    │   └── coverageReports
-    │       ├── ...
-    │       └── ...
-    └── proxyTest
-        ├── ...
-        ├── ...
-        └── coverageReports
-            ├── ...
-            └── ...        
-```
-
-``` bash
-trgt
-├── CMakeLists.txt
-├── filehandling.cpp
-├── filehandling.hpp
-├── main.cpp
-├── trgt.cpp
-└── trgt.hpp
-
-sim
-├── CMakeLists.txt
-├── filehandling.cpp
-├── filehandling.hpp
-├── main.cpp
-├── sim.cpp
-└── sim.hpp
+```plaintext
+.
+├── setup.sh                 # Build automation script
+├── README.md
+├── proxy/                   # Core proxy component
+│   ├── CMakeLists.txt
+│   ├── config.cpp / .hpp    # INI configuration loader
+│   ├── config.ini           # Default configuration file
+│   ├── main.cpp             # Entry point
+│   ├── proxy.cpp / .hpp     # MQTT orchestration, parse/compose, sync
+│   └── unitTest/
+│       ├── configTest/      # Config unit tests (GoogleTest)
+│       └── proxyTest/       # Proxy unit tests (GoogleTest + GMock)
+├── sim/                     # Simulation-side integration harness
+│   ├── CMakeLists.txt
+│   ├── filehandling.cpp / .hpp
+│   ├── main.cpp
+│   └── sim.cpp / .hpp
+├── trgt/                    # Target-side integration harness
+│   ├── CMakeLists.txt
+│   ├── filehandling.cpp / .hpp
+│   ├── main.cpp
+│   └── trgt.cpp / .hpp
+└── .github/
+    └── workflows/
+        └── ci.yml           # GitHub Actions CI pipeline
 ```
 
 ### Directories Description
 
-- **proxy**: Contains the source code for the proxy component.
-- **sim**: Standalone application acting as the simulation environment for the proxy for the integration testing usage.
-- **trgt**: Standalone application acting as the target for the proxy for the integration testing usage.
-- **unitTest**: Contains unit test cases using GoogleTest.
-- **.github**: Contains CI/CD pipeline configurations using GitHub Actions.
+| Directory | Description |
+|-----------|-------------|
 
-## Building and Running
+| `proxy/` | Source code for the proxy component |
+| `sim/` | Standalone app emulating the simulation environment (integration testing) |
+| `trgt/` | Standalone app emulating a target unit (integration testing) |
+| `proxy/unitTest/` | Unit tests using GoogleTest / GMock |
+| `.github/` | CI/CD pipeline configurations (GitHub Actions) |
+
+## Quick Start
+
+A `setup.sh` script is provided to automate the entire workflow:
+
+```bash
+# Clone the repository
+git clone https://github.com/harmware/proxy.git
+cd proxy
+
+# Install dependencies, build everything, and run all tests
+./setup.sh all
+
+# Or run individual steps:
+./setup.sh deps        # Install system dependencies
+./setup.sh build       # Build proxy, sim, and trgt
+./setup.sh test        # Build and run all unit tests
+./setup.sh integration # Build sim & trgt, create log directories
+./setup.sh clean       # Remove all build directories
+./setup.sh help        # Show usage information
+```
+
+## Manual Building and Running
 
 ### Dependencies
 
-The Proxy software has the following dependencies:
-`cmake`, `paho client lib`, `boost lib` and for unit testing: `gtest lib`, `gmock lib`
+| Dependency | Purpose |
+|------------|---------|
 
-you can install them using
+| `cmake` | Build system |
+| `libpaho-mqtt*` | MQTT C/C++ client libraries |
+| `libboost-all-dev` | INI parser (`boost::property_tree`) |
+| `libgtest-dev`, `libgmock-dev` | Unit testing framework |
+| `mosquitto` | MQTT broker (required at runtime and for proxy tests) |
+| `libssl-dev` | TLS support for Paho |
 
-``` bash
-sudo apt-get update && sudo apt-get install -y libssl-dev cmake libboost-all-dev libpaho-mqtt* libgtest-dev libgmock-dev
+Install all at once:
+
+```bash
+sudo apt-get update && sudo apt-get install -y \
+    cmake libssl-dev libboost-all-dev libpaho-mqtt* \
+    libgtest-dev libgmock-dev mosquitto
 ```
 
-To build and run the proxy component, follow these steps:
+### Build the Proxy
 
-1. **Clone the repository**:
+```bash
+cd proxy
+# Optional: edit config.ini to configure proxy behaviour
+mkdir -p build && cd build
+cmake ..
+make
+```
 
-   ```bash
-   git clone https://github.com/ahmedrezkgabr/proxy.git
-   cd proxy
-   ```
+### Run the Proxy
 
-2. **Build the proxy component**:
+The proxy requires a running MQTT broker (Mosquitto):
 
-   ```bash
-   cd proxy
-   # optional: confiuarate the proxy behaviour from config.ini file
-   mkdir build
-   cd build
-   cmake ..
-   make
-   ```
+```bash
+# Start the broker if not already running
+sudo systemctl start mosquitto
 
-3. **Run the proxy component**:
+# Run the proxy (optionally pass a config file)
+./proxy                             # uses default ../config.ini
+./proxy /path/to/custom/config.ini  # uses custom config
+```
 
-    The running of proxy needs the MQTT brocker to be active
+### Configuration
 
-   ```bash
-   # you can pass your ini configuration file
-   ./proxy <path/to/configuration/file>
-   ```
+Edit `proxy/config.ini` to set MQTT broker address, client options, and topic mappings:
+
+```ini
+[client]
+address = mqtt://localhost:1883
+clientId = proxy
+maxBufMsgs = 1000
+cleanSession = true
+autoReconnect = true
+keepAliveTime = 600
+
+[topics]
+qualityOfService = 1
+retainedFlag = true
+numberOfRpis = 3
+simSensorsTopic = sim/sensors
+simActionsTopic = sim/actions
+trgt01SensorsTopic = trgt/01/sensors
+trgt01ActionsTopic = trgt/01/actions
+trgt02SensorsTopic = trgt/02/sensors
+trgt02ActionsTopic = trgt/02/actions
+trgt03SensorsTopic = trgt/03/sensors
+trgt03ActionsTopic = trgt/03/actions
+```
+
+To add more targets, increase `numberOfRpis` and add matching `trgtXXSensorsTopic` / `trgtXXActionsTopic` entries.
 
 ## Unit Testing
 
-Unit tests are provided using the GoogleTest framework. To build and run the tests:
+Unit tests use the **GoogleTest** and **GMock** frameworks.
 
-1. **Navigate to the unit test directory**:
+```bash
+# Fastest way — run both test suites at once:
+./setup.sh test
 
-   ```bash
-   cd proxy/unitTest/configTest
-   ```
+# Or manually:
 
-2. **Build the tests**:
+# Config tests (no broker needed)
+cd proxy/unitTest/configTest
+mkdir -p build && cd build
+g++ ../config.cpp ../configTest_main.cpp ../configTest_testCases.cpp \
+    -o configTest -lgtest -lgtest_main -lgmock -pthread
+cd .. && ./build/configTest
 
-   ```bash
-   mkdir build
-   cd build
-   cmake ..
-   make
-   ```
+# Proxy tests (needs Mosquitto running on localhost:1883)
+cd proxy/unitTest/proxyTest
+mkdir -p build && cd build
+g++ ../proxy.cpp ../proxyTest_main.cpp ../proxyTest_testCases.cpp \
+    -o proxyTest -lgtest -lgtest_main -lgmock -pthread \
+    -lpaho-mqttpp3 -lpaho-mqtt3a
+cd .. && ./build/proxyTest
+```
 
-3. **Run the tests**:
-
-   ```bash
-   ./configTest
-   ```
-
-4. **Repeat for the proxyTest**
+> **Note**: The proxy tests (`publishSenario`, `subscibeSenario`, `getDatafromCarla`, `getDatafromRPIS`) require a live MQTT broker at `mqtt://localhost:1883`. Start Mosquitto before running them.
 
 ## Integration Testing
 
-We have a stand-alone applications that provide the functionality of the target and simulation from the proxy POV (communication).
+Standalone applications emulate the simulation and target sides to verify end-to-end communication through the proxy.
 
-To test the Interaction between proxy, simulation, and number of targets
+```bash
+# Build both (or use ./setup.sh integration)
+cd sim   && mkdir -p build && cd build && cmake .. && make && cd ../..
+cd trgt  && mkdir -p build && cd build && cmake .. && make && cd ../..
 
-1. **Navigate to sim and build the simulation-like application**:
+# Create log directories
+mkdir -p .logs/sim .logs/trgt01 .logs/trgt02
+touch .logs/sim/{sensors,actions}.csv
+touch .logs/trgt01/{sensors,actions}.csv
+touch .logs/trgt02/{sensors,actions}.csv
 
-    ``` bash
-    cd sim
-    mkdir build
-    cd build
-    cmake ..
-    make
-    ```
+# Start the broker
+sudo systemctl start mosquitto
 
-2. **Run the simulation-like application**
+# In separate terminals:
+./proxy/build/proxy                                     # Start proxy
+./sim/build/sim mqtt://localhost:1883                   # Start sim
+./trgt/build/trgt 01 .logs/trgt01/actions.csv .logs/trgt01/sensors.csv  # Target 1
+./trgt/build/trgt 02 .logs/trgt02/actions.csv .logs/trgt02/sensors.csv  # Target 2
+```
 
-    The running of simulation-like application needs the MQTT brocker to be active
-
-   ```bash
-   ./sim <address>
-   ```
-
-3. **Navigate to trgt and build the target-like application**:
-
-    ``` bash
-    cd trgt
-    mkdir build
-    cd build
-    cmake ..
-    make
-    ```
-
-4. **Run the target-like application**:
-
-    The running of target-like application needs the MQTT brocker to be active
-
-   ```bash
-   ./trgt <target_id> <path/to/actions/log/file> <path/to/sensors/log/file>
-   ```
-
-5. **You can add instences of the target like application as you want, each with unique id**:
-    
-    you need to specify the number of targets in the proxy configuration file `proxy/proxy/confi.ini`.
-
-
-6. **Do not forget to build the log directory for the sim and trgt applications and touch files for both sensors and actions**:
-
-    bath prefered to be like:
-    ```bash
-    ├── proxy
-    ├── sim
-    ├── trgt
-    └── .log
-    ```
+Make sure the number of targets matches `numberOfRpis` in `proxy/config.ini`. Each target instance must have a unique ID.
 
 ## CI/CD
 
-The repository uses GitHub Actions for continuous integration and continuous deployment (CI/CD). The configuration files are located in the `.github/workflows` directory.
+The repository uses **GitHub Actions** for continuous integration. The pipeline (`.github/workflows/ci.yml`) performs:
+
+1. **Install dependencies** — system packages for MQTT, Boost, GoogleTest
+2. **Build the proxy** — CMake + Make
+3. **Run config unit tests** — builds and executes `configTest`
+4. **Start MQTT broker** — installs and starts Mosquitto
+5. **Run proxy unit tests** — builds and executes `proxyTest`
+
+The pipeline runs automatically on every push to the `main` branch.
