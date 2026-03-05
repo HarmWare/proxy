@@ -2,6 +2,8 @@
 #define PROXY__HPP_
 
 #include <iostream>
+#include <mutex>
+#include <condition_variable>
 #include "mqtt/async_client.h"
 
 enum class Proxy_Error_t
@@ -77,6 +79,12 @@ public:
 
     void clearRxFlag(Proxy_Flag_t type);
 
+    /**
+     * @brief Blocks until data is available from either CARLA or all RPIs.
+     * @return Proxy_Flag_t indicating which source has data ready.
+     */
+    Proxy_Flag_t waitForData(void);
+
 private:
     /* mqtt stuff */
     mqtt::async_client proxyClient;
@@ -92,6 +100,7 @@ private:
     uint64_t maskRx{0};
     uint8_t numberOfRpis{0};
     std::mutex flagMutex;
+    std::condition_variable rxCondition;
     std::mutex sensorsMutex;
     std::mutex actionsMutex;
 };

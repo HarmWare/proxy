@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
             if (callback.recived_msg_flag)
             {
                 handler.setData(callback.msg, OUTPUT_FILE_PATH);
-                callback.recived_msg_flag = 0;
+                callback.recived_msg_flag = false;
             }
 
             /* wait */

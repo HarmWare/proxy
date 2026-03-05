@@ -14,7 +14,7 @@ std::string FileHandling::getData(const std::string fileName)
     if (!inputFile.is_open())
     {
         std::cerr << "Error opening the file." << std::endl;
-        return NULL;
+        return {};
     }
 
     /* read the data */

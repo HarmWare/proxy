@@ -61,22 +61,22 @@ TEST_F(configTest, getKeepAliveTime_2)
 
 TEST_F(configTest, getPubTocpicsNames)
 {
-    EXPECT_THAT(handler.getPubTocpicsNames(), ElementsAre("carla/actions", "rpi/01/sensors", "rpi/02/sensors"));
+    EXPECT_THAT(handler.getPubTocpicsNames(), ElementsAre("sim/actions", "trgt/01/sensors", "trgt/02/sensors"));
 }
 
 TEST_F(configTest, getPubTocpicsNames_2)
 {
-    EXPECT_THAT(handler.getPubTocpicsNames(), Not(ElementsAre("carla/actio", "rpi/01/sens", "rpi/02/sensors")));
+    EXPECT_THAT(handler.getPubTocpicsNames(), Not(ElementsAre("sim/actio", "trgt/01/sens", "trgt/02/sensors")));
 }
 
 TEST_F(configTest, getSubTocpicsNames_1)
 {
-    EXPECT_THAT(handler.getSubTocpicsNames(), ElementsAre("carla/sensors", "rpi/01/actions", "rpi/02/actions"));
+    EXPECT_THAT(handler.getSubTocpicsNames(), ElementsAre("sim/sensors", "trgt/01/actions", "trgt/02/actions"));
 }
 
 TEST_F(configTest, getSubTocpicsNames_2)
 {
-    EXPECT_THAT(handler.getPubTocpicsNames(), Not(ElementsAre("carla/actio", "rpi/01/sens", "rpi/02/sensors")));
+    EXPECT_THAT(handler.getPubTocpicsNames(), Not(ElementsAre("sim/actio", "trgt/01/sens", "trgt/02/sensors")));
 }
 
 TEST_F(configTest, getNumberOfRpis_1)

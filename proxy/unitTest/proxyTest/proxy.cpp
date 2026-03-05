@@ -1,5 +1,4 @@
 #include <iostream>
-#include <math.h>
 #include <mutex>
 #include "mockedConfig.hpp"
 #include "mqtt/async_client.h"
@@ -27,22 +26,22 @@ Proxy::Proxy(ConfigHandler &config) : proxyClient(config.getAddress(), config.ge
                                             {
                                                 if (topic == this->subTopics[i].get_name())
                                                 {
-                                                    this->flagMutex.lock();
-                                                    this->Rx |= (1 << i);                   /* set the corresponding bit */
-                                                    this->flagMutex.unlock();
+                                                    {
+                                                        std::lock_guard<std::mutex> lk(this->flagMutex);
+                                                        this->Rx |= (1 << i);               /* set the corresponding bit */
+                                                    }
 
                                                     if (!i)  /* cpy the content */
                                                     {
-                                                        this->sensorsMutex.lock();
+                                                        std::lock_guard<std::mutex> lk(this->sensorsMutex);
                                                         this->sensorsMsgs[i] = content;
-                                                        this->sensorsMutex.unlock();
                                                     }
                                                     else    /* cpy the content */
                                                     {
-                                                        this->actionsMutex.lock();
+                                                        std::lock_guard<std::mutex> lk(this->actionsMutex);
                                                         this->actionsMsgs[i] = content;
-                                                        this->actionsMutex.unlock();
-                                                    }  
+                                                    }
+                                                    this->rxCondition.notify_one();
                                                 }
                                             } });
 
@@ -72,7 +71,7 @@ Proxy::Proxy(ConfigHandler &config) : proxyClient(config.getAddress(), config.ge
     this->sensorsMsgs.resize(this->numberOfRpis + 1);
 
     /* calculate the mask of the Rx flag */
-    this->maskRx = std::pow(2, this->numberOfRpis + 1) - 2;
+    this->maskRx = (1ULL << (this->numberOfRpis + 1)) - 2;
 
     /* create the topics of publishing and subscription */
     for (uint8_t i = 0; i < this->numberOfRpis + 1; i++)
@@ -150,6 +149,7 @@ void Proxy::subscribe(void)
 }
 Proxy_Flag_t Proxy::getRxFalg()
 {
+    std::lock_guard<std::mutex> lk(this->flagMutex);
     /* if bit-0 of the flag equal to 1 so the proxy has received from carla*/
     if (this->Rx & 1)
         return Proxy_Flag_t::CARLA;
@@ -175,7 +175,7 @@ void Proxy::publish(Proxy_Flag_t type)
 
 void Proxy::clearRxFlag(Proxy_Flag_t type)
 {
-    this->flagMutex.lock();
+    std::lock_guard<std::mutex> lk(this->flagMutex);
     /* clear the corresponding bit of carla (bit-0) */
     if (type == Proxy_Flag_t::CARLA)
         this->Rx &= (~(1));
@@ -183,22 +183,32 @@ void Proxy::clearRxFlag(Proxy_Flag_t type)
     /* clear the corresponding bits of rpis bits[1:numberOfRpis] */
     else
         this->Rx &= (~(this->maskRx));
-    this->flagMutex.unlock();
 }
 
 /* not yet */
 void Proxy::parse()
 {
-    this->sensorsMutex.lock();
+    std::lock_guard<std::mutex> lk(this->sensorsMutex);
     this->sensorsMsgs[1] = this->sensorsMsgs[0];
     // this->sensorsMsgs[2] = this->sensorsMsgs[0];
-    this->sensorsMutex.unlock();
 }
 
 /* not yet */
 void Proxy::compose()
 {
-    this->actionsMutex.lock();
+    std::lock_guard<std::mutex> lk(this->actionsMutex);
     this->actionsMsgs[0] = this->actionsMsgs[1];
-    this->actionsMutex.unlock();
+}
+
+Proxy_Flag_t Proxy::waitForData()
+{
+    std::unique_lock<std::mutex> lk(this->flagMutex);
+    this->rxCondition.wait(lk, [this]
+                           { return (this->Rx & 1) ||
+                                    (this->Rx == this->maskRx) ||
+                                    (this->Rx == this->maskRx + 1); });
+
+    if (this->Rx & 1)
+        return Proxy_Flag_t::CARLA;
+    return Proxy_Flag_t::RPIS;
 }

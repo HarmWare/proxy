@@ -1,10 +1,12 @@
 #ifndef CARLA_HPP
 #define CARLA_HPP
+#include <atomic>
+#include <string>
 #include "mqtt/async_client.h"
 class MyCallBack : public virtual mqtt::callback
 {
 public:
-    int recived_msg_flag = 0;
+    std::atomic<bool> recived_msg_flag{false};
     std::string msg;
 
     /* overriding the functions on every action may happen */

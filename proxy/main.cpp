@@ -46,11 +46,11 @@ int main(int argc, char *argv[])
 
         while (true)
         {
+            /* block until data is available from CARLA or all RPIs */
+            Proxy_Flag_t flag = myProxy.waitForData();
 
-            /* interface */
-            if (myProxy.getRxFalg() == Proxy_Flag_t::CARLA) /* received from carla */
+            if (flag == Proxy_Flag_t::CARLA) /* received from carla */
             {
-
                 /* parsing information */
                 std::cout << "parsing..." << std::endl;
                 myProxy.parse();
@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
                 /* clear the flag */
                 myProxy.clearRxFlag(Proxy_Flag_t::CARLA);
             }
-            else if (myProxy.getRxFalg() == Proxy_Flag_t::RPIS)
+            else if (flag == Proxy_Flag_t::RPIS)
             {
                 /* composing information */
                 std::cout << "composing..." << std::endl;
@@ -74,11 +74,6 @@ int main(int argc, char *argv[])
                 myProxy.clearRxFlag(Proxy_Flag_t::RPIS);
             }
         }
-
-        /* disconnect and wait till done */
-        std::cout << "\nDisconnecting..." << std::flush;
-        myProxy.disconnect();
-        std::cout << "OK" << std::endl;
     }
     catch (const std::exception &e)
     {

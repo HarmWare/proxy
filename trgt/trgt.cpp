@@ -6,7 +6,7 @@ void MyCallBack::connection_lost(const std::string &cause)
 
 void MyCallBack::message_arrived(mqtt::const_message_ptr msg)
 {
-    recived_msg_flag = 1;
+    recived_msg_flag = true;
 
     std::cout << "Message arrived with data: " << msg->to_string()
               << ", from topic: " << msg->get_topic()

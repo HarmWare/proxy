@@ -38,38 +38,46 @@ std::string ConfigHandler::getConfigFilePath(void)
  */
 Config_Error_t ConfigHandler::loadConfiguaration(void)
 {
-    /* create the configuration parameters tree */
-    boost::property_tree::ptree configTree;
-
-    /* fill the tree with the content at the configuration file */
-    boost::property_tree::ini_parser::read_ini(this->configFilePath, configTree);
-
-    /* get the client parameters */
-    this->myClientData.address = configTree.get<std::string>("client.address");
-    this->myClientData.clientId = configTree.get<std::string>("client.clientId");
-    this->myClientData.maxBufMsgs = configTree.get<uint32_t>("client.maxBufMsgs");
-    this->myClientData.cleanSession = configTree.get<bool>("client.cleanSession");
-    this->myClientData.autoReconnect = configTree.get<bool>("client.autoReconnect");
-    this->myClientData.keepAliveTime = configTree.get<uint64_t>("client.keepAliveTime");
-
-    this->myTopicsData.qualityOfService = configTree.get<uint8_t>("topics.qualityOfService");
-    this->myTopicsData.retainedFlag = configTree.get<bool>("topics.retainedFlag");
-
-    /* get the number of the rpis in the system */
-    this->myTopicsData.numberOfRpis = configTree.get<uint8_t>("topics.numberOfRpis");
-
-    /* get carla's topics */
-    this->myTopicsData.pubTopicsNames.push_back(configTree.get<std::string>("topics.carlaActionsTopic"));
-    this->myTopicsData.subTopicsNames.push_back(configTree.get<std::string>("topics.carlaSensorsTopic"));
-
-    /* loop to get rpix topics : x = [1:numberOfRpis] */
-    for (uint8_t i = 0; i < this->myTopicsData.numberOfRpis; i++)
+    try
     {
-        this->myTopicsData.pubTopicsNames.push_back(configTree.get<std::string>("topics.rpi0" + std::to_string(i + 1) + "SensorsTopic"));
-        this->myTopicsData.subTopicsNames.push_back(configTree.get<std::string>("topics.rpi0" + std::to_string(i + 1) + "ActionsTopic"));
-    }
+        /* create the configuration parameters tree */
+        boost::property_tree::ptree configTree;
 
-    return Config_Error_t::OK;
+        /* fill the tree with the content at the configuration file */
+        boost::property_tree::ini_parser::read_ini(this->configFilePath, configTree);
+
+        /* get the client parameters */
+        this->myClientData.address = configTree.get<std::string>("client.address");
+        this->myClientData.clientId = configTree.get<std::string>("client.clientId");
+        this->myClientData.maxBufMsgs = configTree.get<uint32_t>("client.maxBufMsgs");
+        this->myClientData.cleanSession = configTree.get<bool>("client.cleanSession");
+        this->myClientData.autoReconnect = configTree.get<bool>("client.autoReconnect");
+        this->myClientData.keepAliveTime = configTree.get<uint64_t>("client.keepAliveTime");
+
+        this->myTopicsData.qualityOfService = configTree.get<uint8_t>("topics.qualityOfService");
+        this->myTopicsData.retainedFlag = configTree.get<bool>("topics.retainedFlag");
+
+        /* get the number of the rpis in the system */
+        this->myTopicsData.numberOfRpis = configTree.get<uint8_t>("topics.numberOfRpis");
+
+        /* get sim's topics */
+        this->myTopicsData.pubTopicsNames.push_back(configTree.get<std::string>("topics.simActionsTopic"));
+        this->myTopicsData.subTopicsNames.push_back(configTree.get<std::string>("topics.simSensorsTopic"));
+
+        /* loop to get trgt topics : x = [1:numberOfRpis] */
+        for (uint8_t i = 0; i < this->myTopicsData.numberOfRpis; i++)
+        {
+            this->myTopicsData.pubTopicsNames.push_back(configTree.get<std::string>("topics.trgt0" + std::to_string(i + 1) + "SensorsTopic"));
+            this->myTopicsData.subTopicsNames.push_back(configTree.get<std::string>("topics.trgt0" + std::to_string(i + 1) + "ActionsTopic"));
+        }
+
+        return Config_Error_t::OK;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Config error: " << e.what() << std::endl;
+        return Config_Error_t::NOT_OK;
+    }
 }
 
 std::string ConfigHandler::getAddress()

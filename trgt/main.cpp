@@ -25,8 +25,8 @@ int main(int argc, char *argv[])
     /* init */
     /* get the passed argument to be the TRGT_ID, INPUT_FILE_PATH, and OUTPUT_FILE_PATH in this order */
     std::string TRGT_ID = (argc > 1) ? std::string(argv[1]) : "01";
-    std::string INPUT_FILE_PATH = (argc > 2) ? std::string(argv[2]) : "../../.logs/trgt" + std::string(argv[1]) + "/actions.csv";
-    std::string OUTPUT_FILE_PATH = (argc > 3) ? std::string(argv[3]) : "../../.logs/trgt" + std::string(argv[1]) + "/sensors.csv";
+    std::string INPUT_FILE_PATH = (argc > 2) ? std::string(argv[2]) : "../../.logs/trgt" + TRGT_ID + "/actions.csv";
+    std::string OUTPUT_FILE_PATH = (argc > 3) ? std::string(argv[3]) : "../../.logs/trgt" + TRGT_ID + "/sensors.csv";
 
     const std::string CLIENT_ID{"trgt_" + TRGT_ID};
     const std::string TOPIC_TO_PUB{"trgt/" + TRGT_ID + "/actions"};
@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
             if (callback.recived_msg_flag)
             {
                 handler.setData(callback.msg, OUTPUT_FILE_PATH);
-                callback.recived_msg_flag = 0;
+                callback.recived_msg_flag = false;
             }
 
             /* wait */
