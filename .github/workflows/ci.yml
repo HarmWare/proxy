@@ -47,6 +47,9 @@ jobs:
             googletest \
             mosquitto
 
+      - name: Ensure ccache directory exists
+        run: mkdir -p "${CCACHE_DIR}"
+
       - name: Ensure GoogleTest/GoogleMock libraries are available
         run: |
           if ! ldconfig -p | grep -qE 'libgtest|libgmock'; then
@@ -132,6 +135,9 @@ jobs:
             googletest \
             mosquitto
 
+      - name: Ensure ccache directory exists
+        run: mkdir -p "${CCACHE_DIR}"
+
       - name: Ensure GoogleTest/GoogleMock libraries are available
         run: |
           if ! ldconfig -p | grep -qE 'libgtest|libgmock'; then
@@ -166,7 +172,10 @@ jobs:
 
       - name: Start Mosquitto broker
         run: |
-          sudo systemctl start mosquitto || mosquitto -d -p 1883
+          sudo systemctl start mosquitto || true
+          if ! pgrep -x mosquitto >/dev/null 2>&1; then
+            mosquitto -d -p 1883
+          fi
           for _ in {1..10}; do
             if (echo > /dev/tcp/127.0.0.1/1883) >/dev/null 2>&1; then
               exit 0
