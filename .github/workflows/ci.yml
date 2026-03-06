@@ -44,7 +44,17 @@ jobs:
             libpaho-mqttpp-dev \
             libgtest-dev \
             libgmock-dev \
+            googletest \
             mosquitto
+
+      - name: Ensure GoogleTest/GoogleMock libraries are available
+        run: |
+          if ! ldconfig -p | grep -qE 'libgtest|libgmock'; then
+            cmake -S /usr/src/googletest -B /tmp/googletest-build
+            cmake --build /tmp/googletest-build -j "$(nproc)"
+            sudo cmake --install /tmp/googletest-build --prefix /usr/local
+            sudo ldconfig
+          fi
 
       - name: Restore compiler cache
         uses: actions/cache@v4
@@ -119,7 +129,17 @@ jobs:
             libpaho-mqttpp-dev \
             libgtest-dev \
             libgmock-dev \
+            googletest \
             mosquitto
+
+      - name: Ensure GoogleTest/GoogleMock libraries are available
+        run: |
+          if ! ldconfig -p | grep -qE 'libgtest|libgmock'; then
+            cmake -S /usr/src/googletest -B /tmp/googletest-build
+            cmake --build /tmp/googletest-build -j "$(nproc)"
+            sudo cmake --install /tmp/googletest-build --prefix /usr/local
+            sudo ldconfig
+          fi
 
       - name: Restore compiler cache
         uses: actions/cache@v4
@@ -147,7 +167,14 @@ jobs:
       - name: Start Mosquitto broker
         run: |
           sudo systemctl start mosquitto || mosquitto -d -p 1883
-          sleep 1
+          for _ in {1..10}; do
+            if (echo > /dev/tcp/127.0.0.1/1883) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Mosquitto broker did not become ready on port 1883"
+          exit 1
 
       - name: Build and run proxy unit tests
         working-directory: proxy/unitTest/proxyTest
