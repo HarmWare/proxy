@@ -12,7 +12,7 @@
 #include "filehandling.hpp"
 #include "trgt.hpp"
 
-const std::string DFLT_ADDRESS{"mqtt://localhost:1883"};
+const std::string DFLT_ADDRESS{"tcp://localhost:1883"};
 const int QOS{1};
 const std::string DEF_ID{"01"};
 
