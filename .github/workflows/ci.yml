@@ -239,8 +239,10 @@ jobs:
 
       - name: Smoke test proxy startup
         run: |
+          cp proxy/config.ini /tmp/proxy-ci.config.ini
+          sed -i 's#^address *= *mqtt://#address = tcp://#' /tmp/proxy-ci.config.ini
           set +e
-          timeout 5s ./proxy/build/proxy ./proxy/config.ini
+          timeout 5s ./proxy/build/proxy /tmp/proxy-ci.config.ini
           code="$?"
           set -e
           if [[ "$code" -ne 0 && "$code" -ne 124 ]]; then
@@ -251,7 +253,7 @@ jobs:
       - name: Smoke test sim startup
         run: |
           set +e
-          timeout 5s ./sim/build/sim mqtt://localhost:1883
+          timeout 5s ./sim/build/sim tcp://localhost:1883
           code="$?"
           set -e
           if [[ "$code" -ne 0 && "$code" -ne 124 ]]; then

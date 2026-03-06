@@ -6,7 +6,7 @@
 #include <chrono>
 void ProxyTest::SetUp()
 {
-    EXPECT_CALL(mch, getAddress).Times(1).WillOnce(testing::Return("mqtt://localhost:1883"));
+    EXPECT_CALL(mch, getAddress).Times(1).WillOnce(testing::Return("tcp://localhost:1883"));
     EXPECT_CALL(mch, getClientID).Times(1).WillOnce(testing::Return("proxy"));
     EXPECT_CALL(mch, getMaxBufMsgs).Times(1).WillOnce(testing::Return(120));
     EXPECT_CALL(mch, getSubTocpicsNames).Times(1).WillOnce(testing::Return(std::vector<std::string>{"sim/sensors", "trgt/01/actions", "trgt/02/actions"}));
@@ -33,7 +33,7 @@ TEST_F(ProxyTest, Proxy_Flag)
 TEST_F(ProxyTest, get_server_uri)
 {
 
-    EXPECT_STREQ(myProxy->get_server_uri().c_str(), "mqtt://localhost:1883");
+    EXPECT_STREQ(myProxy->get_server_uri().c_str(), "tcp://localhost:1883");
 }
 
 TEST_F(ProxyTest, publishSenario)
