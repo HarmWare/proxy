@@ -1,47 +1,237 @@
-name: Continuous Integration for the main branch
+name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    env:
+      CCACHE_DIR: ~/.cache/ccache
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-      
-    - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y libssl-dev cmake libboost-all-dev libpaho-mqtt* libgtest-dev libgmock-dev
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Build main code
-      run: |
-        mkdir -p build
-        cd build
-        cmake ..
-        make
-      working-directory: proxy/
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ccache \
+            cmake \
+            libssl-dev \
+            libboost-all-dev \
+            libpaho-mqtt-dev \
+            libpaho-mqttpp-dev \
+            libgtest-dev \
+            libgmock-dev \
+            mosquitto
 
-    - name: Build and run config unit tests
-      run: |
-        mkdir -p build
-        cd build
-        cp ../config.ini .
-        g++ ../config.cpp ../configTest_main.cpp ../configTest_testCases.cpp -o configTest -lgtest -lgtest_main -lgmock -pthread
-        ./configTest
-      working-directory: proxy/unitTest/configTest
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-build-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-build-${{ github.ref_name }}-
+            ${{ runner.os }}-ccache-build-
 
-    - name: Start MQTT broker
-      run: |
-        sudo apt-get install -y mosquitto
-        sudo systemctl start mosquitto || mosquitto -d -p 1883
+      - name: Configure ccache
+        run: |
+          ccache --set-config=max_size=200M
+          ccache --zero-stats
 
-    - name: Build and run proxy unit tests
-      run: |
-        mkdir -p build
-        cd build
-        g++ ../proxy.cpp ../proxyTest_main.cpp ../proxyTest_testCases.cpp -o proxyTest -lgtest -lgtest_main -lgmock -pthread -lpaho-mqttpp3 -lpaho-mqtt3a
-        ./proxyTest
-      working-directory: proxy/unitTest/proxyTest
+      - name: Build proxy component
+        run: |
+          cmake -S proxy -B proxy/build -D CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build proxy/build -j "$(nproc)"
+
+      - name: Build simulation harness
+        run: |
+          cmake -S sim -B sim/build -D CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build sim/build -j "$(nproc)"
+
+      - name: Build target harness
+        run: |
+          cmake -S trgt -B trgt/build -D CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build trgt/build -j "$(nproc)"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-binaries
+          path: |
+            proxy/build/proxy
+            sim/build/sim
+            trgt/build/trgt
+          if-no-files-found: error
+
+      - name: ccache statistics
+        if: always()
+        run: ccache --show-stats
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-22.04
+    needs: build
+    timeout-minutes: 20
+
+    env:
+      CCACHE_DIR: ~/.cache/ccache
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ccache \
+            cmake \
+            libssl-dev \
+            libboost-all-dev \
+            libpaho-mqtt-dev \
+            libpaho-mqttpp-dev \
+            libgtest-dev \
+            libgmock-dev \
+            mosquitto
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-tests-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-tests-${{ github.ref_name }}-
+            ${{ runner.os }}-ccache-tests-
+
+      - name: Configure ccache
+        run: |
+          ccache --set-config=max_size=200M
+          ccache --zero-stats
+
+      - name: Build and run config unit tests
+        working-directory: proxy/unitTest/configTest
+        run: |
+          mkdir -p build
+          ccache g++ config.cpp configTest_main.cpp configTest_testCases.cpp \
+            -o build/configTest \
+            -lgtest -lgtest_main -lgmock -pthread
+          ./build/configTest
+
+      - name: Start Mosquitto broker
+        run: |
+          sudo systemctl start mosquitto || mosquitto -d -p 1883
+          sleep 1
+
+      - name: Build and run proxy unit tests
+        working-directory: proxy/unitTest/proxyTest
+        run: |
+          mkdir -p build
+          ccache g++ proxy.cpp proxyTest_main.cpp proxyTest_testCases.cpp \
+            -o build/proxyTest \
+            -lgtest -lgtest_main -lgmock -pthread \
+            -lpaho-mqttpp3 -lpaho-mqtt3a
+          ./build/proxyTest
+
+      - name: ccache statistics
+        if: always()
+        run: ccache --show-stats
+
+  integration-smoke:
+    name: Integration Smoke
+    runs-on: ubuntu-22.04
+    needs: [build, unit-tests]
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev \
+            libboost-all-dev \
+            libpaho-mqtt-dev \
+            libpaho-mqttpp-dev \
+            mosquitto
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-build-binaries
+
+      - name: Make binaries executable
+        run: |
+          chmod +x proxy/build/proxy sim/build/sim trgt/build/trgt
+
+      - name: Start Mosquitto broker
+        run: |
+          sudo systemctl start mosquitto || mosquitto -d -p 1883
+          sleep 1
+
+      - name: Smoke test proxy startup
+        run: |
+          set +e
+          timeout 5s ./proxy/build/proxy ./proxy/config.ini
+          code="$?"
+          set -e
+          if [[ "$code" -ne 0 && "$code" -ne 124 ]]; then
+            echo "Proxy smoke test failed with exit code $code"
+            exit "$code"
+          fi
+
+      - name: Smoke test sim startup
+        run: |
+          set +e
+          timeout 5s ./sim/build/sim mqtt://localhost:1883
+          code="$?"
+          set -e
+          if [[ "$code" -ne 0 && "$code" -ne 124 ]]; then
+            echo "Sim smoke test failed with exit code $code"
+            exit "$code"
+          fi
+
+      - name: Smoke test trgt startup
+        run: |
+          mkdir -p .logs/trgt01
+          touch .logs/trgt01/actions.csv .logs/trgt01/sensors.csv
+          set +e
+          timeout 5s ./trgt/build/trgt 01 .logs/trgt01/actions.csv .logs/trgt01/sensors.csv
+          code="$?"
+          set -e
+          if [[ "$code" -ne 0 && "$code" -ne 124 ]]; then
+            echo "Trgt smoke test failed with exit code $code"
+            exit "$code"
+          fi
