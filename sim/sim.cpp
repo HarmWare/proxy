@@ -1,24 +1,45 @@
 #include "sim.hpp"
+#include "../common/observability.hpp"
 
 void MyCallBack::connection_lost(const std::string &cause)
 {
-    std::cout << "Connection lost: " << cause << std::endl;
+    obs::Logger::instance().log(
+        obs::LogLevel::WARN,
+        "sim",
+        "connection_lost",
+        "Connection to broker lost",
+        {{"cause", cause}});
 }
 
-void MyCallBack::message_arrived(mqtt::const_message_ptr msg)
+void MyCallBack::message_arrived(mqtt::const_message_ptr messagePtr)
 {
-    recived_msg_flag = true;
+    {
+        std::lock_guard<std::mutex> lock(this->msgMutex);
+        this->msg = messagePtr->to_string();
+        recived_msg_flag.store(true, std::memory_order_relaxed);
+    }
 
-    std::cout << "Message arrived with data: " << msg->to_string()
-              << ", from topic: " << msg->get_topic()
-              << std::endl;
-
-    this->msg = msg->to_string();
+    obs::Logger::instance().log(
+        obs::LogLevel::DEBUG,
+        "sim",
+        "message_arrived",
+        "Message arrived",
+        {{"topic", messagePtr->get_topic()}, {"size", obs::to_field_value(messagePtr->to_string().size())}});
 }
 
 void MyCallBack::delivery_complete(mqtt::delivery_token_ptr token)
 {
-    std::cout << "Delivery complete for data: " << token->get_message()->get_payload()
-              << ", to topic: " << token->get_message()->get_topic()
-              << std::endl;
+    obs::Logger::instance().log(
+        obs::LogLevel::DEBUG,
+        "sim",
+        "delivery_complete",
+        "Delivery complete",
+        {{"topic", token->get_message()->get_topic()}});
+}
+
+std::string MyCallBack::take_message()
+{
+    std::lock_guard<std::mutex> lock(this->msgMutex);
+    recived_msg_flag.store(false, std::memory_order_relaxed);
+    return this->msg;
 }

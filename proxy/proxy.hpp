@@ -2,6 +2,8 @@
 #define PROXY__HPP_
 
 #include <iostream>
+#include <atomic>
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 #include "mqtt/async_client.h"
@@ -22,6 +24,16 @@ enum class Proxy_Flag_t
 class Proxy
 {
 public:
+    struct RuntimeMetricsSnapshot
+    {
+        uint64_t receivedMessages{0};
+        uint64_t publishedMessages{0};
+        uint64_t parseErrors{0};
+        uint64_t composeErrors{0};
+        uint64_t publishErrors{0};
+        uint64_t waitTimeouts{0};
+    };
+
     /**
      * @brief Create a Proxy that can be used to communicate with an MQTT server.
      * @throw exception if an argument is invalid
@@ -84,6 +96,8 @@ public:
      * @return Proxy_Flag_t indicating which source has data ready.
      */
     Proxy_Flag_t waitForData(void);
+    Proxy_Flag_t waitForData(std::chrono::milliseconds timeout);
+    RuntimeMetricsSnapshot getMetricsSnapshot() const;
 
 private:
     /* mqtt stuff */
@@ -103,6 +117,12 @@ private:
     std::condition_variable rxCondition;
     std::mutex sensorsMutex;
     std::mutex actionsMutex;
+    std::atomic<uint64_t> metricsReceivedMessages{0};
+    std::atomic<uint64_t> metricsPublishedMessages{0};
+    std::atomic<uint64_t> metricsParseErrors{0};
+    std::atomic<uint64_t> metricsComposeErrors{0};
+    std::atomic<uint64_t> metricsPublishErrors{0};
+    std::atomic<uint64_t> metricsWaitTimeouts{0};
 
     std::vector<std::string> parseJSONString(const std::string &jsonString);
     std::string composeJSONString(const std::vector<std::string> &stringList);

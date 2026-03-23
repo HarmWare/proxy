@@ -101,6 +101,58 @@ cd proxy
 ./setup.sh help        # Show usage information
 ```
 
+## Scripted Build & Run (Config Flags)
+
+Two production-oriented scripts are available under `scripts/`:
+
+```bash
+# Build with flags
+./scripts/build-system.sh --component all --build-type Release --jobs 8
+
+# Build only proxy in Debug with extra CMake arg
+./scripts/build-system.sh --component proxy --build-type Debug --cmake-arg=-DENABLE_TESTS=ON
+
+# Start full system in background with runtime flags
+./scripts/run-system.sh --start-broker --detach --broker-uri tcp://localhost:1883 --target-ids 01,02,03
+
+# Stop all detached processes started by run-system.sh
+./scripts/run-system.sh --stop
+```
+
+Common run flags:
+
+- `--broker-uri <uri>`: broker endpoint used by proxy/sim/trgt
+- `--proxy-config <path>`: source config file for proxy (runtime copy is generated)
+- `--target-ids <ids>`: comma-separated target IDs, e.g. `01,02,03`
+- `--logs-dir <path>`: base folder for sim/trgt CSV files
+- `--component proxy|sim|trgt|all`: run selected component(s)
+- `--detach`: run in background and store PID files in `.run/pids/`
+
+## Realtime Visualization
+
+You can visualize sensor/action readings in real time from `.logs` using a matplotlib-based dashboard:
+
+```bash
+# Install plotting dependency (once)
+python3 -m pip install matplotlib
+
+# Start the system in background
+./scripts/run-system.sh --start-broker --detach --target-ids 01,02,03
+
+# Launch realtime visualizer
+./scripts/visualize-system.sh --target-ids 01,02,03 --interval-ms 1000 --window 180
+
+# Stop the system when done
+./scripts/run-system.sh --stop
+```
+
+Visualization flags:
+
+- `--logs-dir <path>`: source log directory (default: `.logs`)
+- `--target-ids <ids>`: comma-separated targets (e.g. `01,02,03`)
+- `--interval-ms <num>`: refresh rate in milliseconds
+- `--window <num>`: points retained per plotted channel
+
 ## Manual Building and Running
 
 ### Dependencies

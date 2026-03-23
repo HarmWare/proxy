@@ -1,4 +1,6 @@
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include "config.hpp"
 
 ConfigHandler::ConfigHandler(/* args */) {}
@@ -40,6 +42,9 @@ Config_Error_t ConfigHandler::loadConfiguaration(void)
 {
     try
     {
+        this->myTopicsData.pubTopicsNames.clear();
+        this->myTopicsData.subTopicsNames.clear();
+
         /* create the configuration parameters tree */
         boost::property_tree::ptree configTree;
 
@@ -59,6 +64,12 @@ Config_Error_t ConfigHandler::loadConfiguaration(void)
 
         /* get the number of the rpis in the system */
         this->myTopicsData.numberOfRpis = configTree.get<uint8_t>("topics.numberOfRpis");
+        if (this->myTopicsData.numberOfRpis == 0 || this->myTopicsData.numberOfRpis > MAX_SUPPORTED_RPIS)
+        {
+            std::cerr << "Invalid topics.numberOfRpis. Supported range is [1, "
+                      << static_cast<int>(MAX_SUPPORTED_RPIS) << "]" << std::endl;
+            return Config_Error_t::NOT_OK;
+        }
 
         /* get sim's topics */
         this->myTopicsData.pubTopicsNames.push_back(configTree.get<std::string>("topics.simActionsTopic"));
@@ -67,8 +78,11 @@ Config_Error_t ConfigHandler::loadConfiguaration(void)
         /* loop to get trgt topics : x = [1:numberOfRpis] */
         for (uint8_t i = 0; i < this->myTopicsData.numberOfRpis; i++)
         {
-            this->myTopicsData.pubTopicsNames.push_back(configTree.get<std::string>("topics.trgt0" + std::to_string(i + 1) + "SensorsTopic"));
-            this->myTopicsData.subTopicsNames.push_back(configTree.get<std::string>("topics.trgt0" + std::to_string(i + 1) + "ActionsTopic"));
+            std::ostringstream indexStream;
+            indexStream << std::setw(2) << std::setfill('0') << static_cast<int>(i + 1);
+            const std::string keySuffix = indexStream.str();
+            this->myTopicsData.pubTopicsNames.push_back(configTree.get<std::string>("topics.trgt" + keySuffix + "SensorsTopic"));
+            this->myTopicsData.subTopicsNames.push_back(configTree.get<std::string>("topics.trgt" + keySuffix + "ActionsTopic"));
         }
 
         return Config_Error_t::OK;

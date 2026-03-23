@@ -2,6 +2,7 @@
 #define CONFIG__HHP_
 #include <iostream>
 #include <chrono>
+#include <limits>
 #include "boost/property_tree/ini_parser.hpp"
 
 enum class Config_Error_t
@@ -11,6 +12,8 @@ enum class Config_Error_t
 };
 
 using topicsNames_t = std::vector<std::string>;
+constexpr uint8_t MAX_SUPPORTED_RPIS = 32;
+
 struct ClientData
 {
     std::string address;
@@ -77,6 +80,7 @@ public:
     bool getRetainedFlag();
 
 private:
+    static_assert(MAX_SUPPORTED_RPIS < std::numeric_limits<uint8_t>::max(), "MAX_SUPPORTED_RPIS must fit in uint8_t");
     ClientData myClientData;
     TopicsData myTopicsData;
     std::string configFilePath{"./config.ini"};

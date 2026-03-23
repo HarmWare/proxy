@@ -1,10 +1,13 @@
 #include <iostream>
 #include <mutex>
+#include <stdexcept>
+#include <algorithm>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include "config.hpp"
 #include "mqtt/async_client.h"
 #include "proxy.hpp"
+#include "../common/observability.hpp"
 
 Proxy::Proxy(ConfigHandler &config) : proxyClient(config.getAddress(), config.getClientID(), config.getMaxBufMsgs(), nullptr)
 {
@@ -23,10 +26,14 @@ Proxy::Proxy(ConfigHandler &config) : proxyClient(config.getAddress(), config.ge
                                             /* take the content of the message */
                                             std::string topic = msg->get_topic();
                                             std::string content = msg->to_string();
+                                            this->metricsReceivedMessages.fetch_add(1, std::memory_order_relaxed);
                                             
-                                            std::cout   << "Message arrived with data: " << content
-                                                        << ", from topic: " << topic
-                                                        << std::endl;
+                                            obs::Logger::instance().log(
+                                                obs::LogLevel::DEBUG,
+                                                "proxy",
+                                                "message_received",
+                                                "MQTT message arrived",
+                                                {{"topic", topic}, {"size", obs::to_field_value(content.size())}});
 
                                             for (uint8_t i = 0; i < this->numberOfRpis + 1; i++)/* which topic i received on */
                                             {
@@ -52,13 +59,13 @@ Proxy::Proxy(ConfigHandler &config) : proxyClient(config.getAddress(), config.ge
                                             } });
 
     /* set the call back of connection */
-    this->proxyClient.set_connected_handler([&](const std::string &cause)
+    this->proxyClient.set_connected_handler([&](const std::string &)
                                             { std::cout << "Connected to server: '"
                                                         << this->proxyClient.get_server_uri() << "'"
                                                         << std::endl; });
 
     /* set the call back of the connection lost */
-    this->proxyClient.set_connection_lost_handler([&](const std::string &cause)
+    this->proxyClient.set_connection_lost_handler([&](const std::string &)
                                                   { std::cout << "Connection to server: '"
                                                               << this->proxyClient.get_server_uri()
                                                               << "' lost!" << std::endl; });
@@ -105,15 +112,8 @@ Proxy::~Proxy() {}
  */
 void Proxy::connect(void)
 {
-    try
-    {
-        /* connect the client to the broker with the connection options that have been set */
-        this->proxyClient.connect(this->connectionOptions)->wait();
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << e.what() << '\n';
-    }
+    /* connect the client to the broker with the connection options that have been set */
+    this->proxyClient.connect(this->connectionOptions)->wait();
 }
 
 /**
@@ -124,15 +124,8 @@ void Proxy::connect(void)
  */
 void Proxy::disconnect(void)
 {
-    try
-    {
-        /* disconnect the client from the broker */
-        this->proxyClient.disconnect()->wait();
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << e.what() << '\n';
-    }
+    /* disconnect the client from the broker */
+    this->proxyClient.disconnect()->wait();
 }
 
 /**
@@ -151,6 +144,12 @@ void Proxy::subscribe(void)
     for (uint8_t i = 0; i < this->numberOfRpis + 1; i++)
     {
         this->subTopics[i].subscribe();
+        obs::Logger::instance().log(
+            obs::LogLevel::INFO,
+            "proxy",
+            "subscribed",
+            "Subscribed to topic",
+            {{"topic", this->subTopics[i].get_name()}});
     }
 }
 Proxy_Flag_t Proxy::getRxFalg()
@@ -174,17 +173,46 @@ void Proxy::publish(Proxy_Flag_t type)
     {
         for (uint8_t i = 0; i < this->numberOfRpis; i++)
         {
-            this->pubTopics[i + 1].publish(this->sensorsMsgs[i + 1]);
-            std::cout << "Publishing data: " << this->sensorsMsgs[i + 1]
-                      << ", to topic: " << this->pubTopics[i + 1].to_string()
-                      << std::endl;
+            try
+            {
+                this->pubTopics[i + 1].publish(this->sensorsMsgs[i + 1]);
+                this->metricsPublishedMessages.fetch_add(1, std::memory_order_relaxed);
+                obs::Logger::instance().log(
+                    obs::LogLevel::DEBUG,
+                    "proxy",
+                    "published",
+                    "Published message to target topic",
+                    {{"topic", this->pubTopics[i + 1].get_name()},
+                     {"size", obs::to_field_value(this->sensorsMsgs[i + 1].size())}});
+            }
+            catch (const std::exception &exception)
+            {
+                this->metricsPublishErrors.fetch_add(1, std::memory_order_relaxed);
+                throw std::runtime_error(std::string("Failed to publish target message: ") + exception.what());
+            }
         }
     }
 
     /* publish what has been received from trgts */
     else if (type == Proxy_Flag_t::RPIS)
     {
-        this->pubTopics[0].publish(this->actionsMsgs[0]);
+        try
+        {
+            this->pubTopics[0].publish(this->actionsMsgs[0]);
+            this->metricsPublishedMessages.fetch_add(1, std::memory_order_relaxed);
+            obs::Logger::instance().log(
+                obs::LogLevel::DEBUG,
+                "proxy",
+                "published",
+                "Published aggregate action message",
+                {{"topic", this->pubTopics[0].get_name()},
+                 {"size", obs::to_field_value(this->actionsMsgs[0].size())}});
+        }
+        catch (const std::exception &exception)
+        {
+            this->metricsPublishErrors.fetch_add(1, std::memory_order_relaxed);
+            throw std::runtime_error(std::string("Failed to publish simulator action message: ") + exception.what());
+        }
     }
 }
 
@@ -204,19 +232,24 @@ void Proxy::parse()
 {
     std::lock_guard<std::mutex> lk(this->sensorsMutex);
 
-    if (this->sensorsMsgs.empty())
+    if (this->sensorsMsgs.empty() || this->sensorsMsgs[0].empty())
     {
-        std::cerr << "sensorMsgs is empty!" << std::endl;
+        this->metricsParseErrors.fetch_add(1, std::memory_order_relaxed);
+        obs::Logger::instance().log(obs::LogLevel::WARN, "proxy", "parse_skipped", "Simulator payload is empty");
         return;
     }
 
     std::vector<std::string> parsedStrings = parseJSONString(this->sensorsMsgs[0]);
 
-    /* Resize sensorMsgs to hold the parsed strings */
-    this->sensorsMsgs.resize(parsedStrings.size() + 1);
+    /* Keep a stable size for all configured RPIs to avoid out-of-bounds access */
+    this->sensorsMsgs.resize(this->numberOfRpis + 1);
+
+    /* Clear previous per-target payloads */
+    std::fill(this->sensorsMsgs.begin() + 1, this->sensorsMsgs.end(), std::string{});
 
     /* Assign parsed strings to sensorMsgs starting from index 1 */
-    for (size_t i = 0; i < parsedStrings.size(); ++i)
+    const size_t payloadCount = std::min(parsedStrings.size(), static_cast<size_t>(this->numberOfRpis));
+    for (size_t i = 0; i < payloadCount; ++i)
     {
         this->sensorsMsgs[i + 1] = parsedStrings[i];
     }
@@ -228,7 +261,8 @@ void Proxy::compose()
 
     if (this->actionsMsgs.size() < 2)
     {
-        std::cerr << "Not enough messages to compose!" << std::endl;
+        this->metricsComposeErrors.fetch_add(1, std::memory_order_relaxed);
+        obs::Logger::instance().log(obs::LogLevel::ERROR, "proxy", "compose_failed", "Not enough messages to compose");
         return;
     }
 
@@ -274,7 +308,13 @@ std::vector<std::string> Proxy::parseJSONString(const std::string &jsonString)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "Error parsing JSON: " << e.what() << std::endl;
+        this->metricsParseErrors.fetch_add(1, std::memory_order_relaxed);
+        obs::Logger::instance().log(
+            obs::LogLevel::ERROR,
+            "proxy",
+            "json_parse_error",
+            "Error parsing simulator JSON payload",
+            {{"error", e.what()}});
     }
 
     return resultList;
@@ -302,7 +342,13 @@ std::string Proxy::composeJSONString(const std::vector<std::string> &stringList)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "Error composing JSON: " << e.what() << std::endl;
+        this->metricsComposeErrors.fetch_add(1, std::memory_order_relaxed);
+        obs::Logger::instance().log(
+            obs::LogLevel::ERROR,
+            "proxy",
+            "json_compose_error",
+            "Error composing action JSON payload",
+            {{"error", e.what()}});
         return "";
     }
 }
@@ -318,4 +364,40 @@ Proxy_Flag_t Proxy::waitForData()
     if (this->Rx & 1)
         return Proxy_Flag_t::CARLA;
     return Proxy_Flag_t::RPIS;
+}
+
+Proxy_Flag_t Proxy::waitForData(std::chrono::milliseconds timeout)
+{
+    std::unique_lock<std::mutex> lk(this->flagMutex);
+    const bool ready = this->rxCondition.wait_for(
+        lk,
+        timeout,
+        [this]
+        {
+            return (this->Rx & 1) ||
+                   (this->Rx == this->maskRx) ||
+                   (this->Rx == this->maskRx + 1);
+        });
+
+    if (!ready)
+    {
+        this->metricsWaitTimeouts.fetch_add(1, std::memory_order_relaxed);
+        return Proxy_Flag_t::NOT;
+    }
+
+    if (this->Rx & 1)
+        return Proxy_Flag_t::CARLA;
+    return Proxy_Flag_t::RPIS;
+}
+
+Proxy::RuntimeMetricsSnapshot Proxy::getMetricsSnapshot() const
+{
+    RuntimeMetricsSnapshot snapshot;
+    snapshot.receivedMessages = this->metricsReceivedMessages.load(std::memory_order_relaxed);
+    snapshot.publishedMessages = this->metricsPublishedMessages.load(std::memory_order_relaxed);
+    snapshot.parseErrors = this->metricsParseErrors.load(std::memory_order_relaxed);
+    snapshot.composeErrors = this->metricsComposeErrors.load(std::memory_order_relaxed);
+    snapshot.publishErrors = this->metricsPublishErrors.load(std::memory_order_relaxed);
+    snapshot.waitTimeouts = this->metricsWaitTimeouts.load(std::memory_order_relaxed);
+    return snapshot;
 }
